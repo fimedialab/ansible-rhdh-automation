@@ -1,0 +1,21 @@
+---
+version: 3
+
+images:
+  base_image:
+    name: registry.redhat.io/ansible-automation-platform-24/ee-minimal-rhel9:latest
+
+dependencies:
+  galaxy: requirements.yml
+  python: requirements.txt
+  system: bindep.txt
+
+additional_build_steps:
+  prepend_base:
+    - RUN microdnf install -y python3.11 python3.11-pip
+
+  append_final:
+    - RUN pip3 install --upgrade pip
+    - RUN pip3 install playwright==1.58.0
+    - RUN playwright install --with-deps chromium
+    - RUN chmod -R 755 /root/.cache/ms-playwright

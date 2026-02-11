@@ -1,0 +1,112 @@
+---
+- name: Test RHDH Authentication Role
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    rhdh_url: "http://localhost:7007"
+    rhdh_username: "alice"
+    rhdh_password: "password123"
+    rhdh_auth_verbose: true # Show details for testing
+
+  roles:
+    - role: rhdh_auth
+
+  tasks:
+    - name: Validate token was acquired
+      ansible.builtin.assert:
+        that:
+          - rhdh_bearer_token is defined
+          - rhdh_bearer_token | length > 50
+          - rhdh_token_expiry is defined
+          - rhdh_token_expiry_seconds is defined
+          - rhdh_token_expiry_seconds > 0
+        success_msg: "Token acquired successfully"
+        fail_msg: "Token acquisition failed"
+
+    - name: Test READ operation with token
+      ansible.builtin.uri:
+        url: "{{ rhdh_url }}/api/permission/policies"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ rhdh_bearer_token }}"
+          Content-Type: "application/json"
+        return_content: yes
+      register: read_test
+
+    - name: Display READ test result
+      ansible.builtin.debug:
+        msg: "Successfully retrieved {{ read_test.json | length }} policies"
+
+    - name: Create test role
+      ansible.builtin.uri:
+        url: "{{ rhdh_url }}/api/permission/roles"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ rhdh_bearer_token }}"
+          Content-Type: "application/json"
+        body:
+          memberReferences:
+            - "user:default/alice"
+          name: "role:default/test-ansible-role"
+        body_format: json
+        status_code: [201, 409]
+      register: role_create_test
+
+    - name: Display role create result
+      ansible.builtin.debug:
+        msg: "{{ (role_create_test.status == 201) | ternary('Created test role', 'Test role already exists') }} (HTTP {{ role_create_test.status }})"
+
+    - name: Test WRITE operation - create policy
+      ansible.builtin.uri:
+        url: "{{ rhdh_url }}/api/permission/policies"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ rhdh_bearer_token }}"
+          Content-Type: "application/json"
+        body:
+          - entityReference: "role:default/test-ansible-role"
+            permission: "catalog-entity"
+            policy: "read"
+            effect: "allow"
+        body_format: json
+        status_code: [201, 409]
+      register: write_test
+
+    - name: Display WRITE test result
+      ansible.builtin.debug:
+        msg: "{{ (write_test.status == 201) | ternary('Created test permission', 'Test permission already exists') }} (HTTP {{ write_test.status }})"
+
+    - name: Cleanup test policy
+      ansible.builtin.uri:
+        url: "{{ rhdh_url }}/api/permission/policies/role/default/test-ansible-role"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ rhdh_bearer_token }}"
+          Content-Type: "application/json"
+        body:
+          - permission: "catalog-entity"
+            policy: "read"
+            effect: "allow"
+        body_format: json
+        status_code: [204, 404]
+      register: policy_cleanup_test
+
+    - name: Cleanup test role
+      ansible.builtin.uri:
+        url: "{{ rhdh_url }}/api/permission/roles/role/default/test-ansible-role"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ rhdh_bearer_token }}"
+          Content-Type: "application/json"
+        status_code: [204, 404]
+      register: role_cleanup_test
+
+    - name: Final status
+      ansible.builtin.debug:
+        msg: |
+          All tests passed!
+          - Token acquisition: SUCCESS
+          - READ operation: SUCCESS
+          - WRITE operation: SUCCESS
+          - Cleanup: SUCCESS

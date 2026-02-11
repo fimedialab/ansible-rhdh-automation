@@ -1,0 +1,59 @@
+---
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - rhdh_url is defined
+      - rhdh_url | length > 0
+      - rhdh_username is defined
+      - rhdh_username | length > 0
+      - rhdh_password is defined
+      - rhdh_password | length > 0
+    fail_msg: "Required variables: rhdh_url, rhdh_username, rhdh_password"
+    quiet: true
+
+- name: Display authentication attempt
+  ansible.builtin.debug:
+    msg: "Acquiring RHDH bearer token for user: {{ rhdh_username }} at {{ rhdh_url }}"
+  when: rhdh_auth_verbose | default(false)
+
+- name: Check if Playwright is installed
+  ansible.builtin.command: python3 -c "import playwright"
+  register: playwright_check
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Install Playwright Python package
+  ansible.builtin.pip:
+    name:
+      - playwright=={{ rhdh_auth_playwright_version | default('1.40.0') }}
+    state: present
+  when: playwright_check.rc != 0
+  register: playwright_install
+
+- name: Install Playwright browsers
+  ansible.builtin.command: python3 -m playwright install chromium
+  when: playwright_install is changed
+  changed_when: true
+
+- name: Acquire RHDH bearer token via browser automation
+  rhdh_browser_auth:
+    rhdh_url: "{{ rhdh_url }}"
+    username: "{{ rhdh_username }}"
+    password: "{{ rhdh_password }}"
+    timeout: "{{ rhdh_auth_timeout | default(30) }}"
+  register: rhdh_auth_result
+  no_log: "{{ not (rhdh_auth_verbose | default(false)) }}"
+
+- name: Set token facts for downstream roles
+  ansible.builtin.set_fact:
+    rhdh_bearer_token: "{{ rhdh_auth_result.token }}"
+    rhdh_token_expiry: "{{ rhdh_auth_result.token_expiry }}"
+    rhdh_token_expiry_seconds: "{{ rhdh_auth_result.expiry_seconds }}"
+  no_log: true
+
+- name: Display authentication success
+  ansible.builtin.debug:
+    msg: >-
+      Successfully acquired RHDH bearer token
+      (expires in {{ rhdh_token_expiry_seconds }} seconds)

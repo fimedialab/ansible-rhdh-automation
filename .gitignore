@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.whl
+.venv/
+venv/
+env/
+.env
+*.env.local
+
+# Ansible
+*.retry
+inventory/*_hosts
+*.vault
+.vault_pass
+vault_password_file
+
+# Ansible Execution Environment
+context/
+
+# Collections
+collections/ansible_collections/
+
+# Roles downloaded via requirements
+roles/galaxy_roles/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Logs
+*.log

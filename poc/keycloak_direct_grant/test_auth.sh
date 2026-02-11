@@ -6,12 +6,13 @@
 set -e
 
 # Configuration - Update these with your environment values
-KEYCLOAK_URL="${KEYCLOAK_URL:-https://keycloak.example.com}"
-REALM_NAME="${REALM_NAME:-your-realm}"
-CLIENT_ID="${CLIENT_ID:-rhdh-client}"
-USERNAME="${USERNAME:-service-user}"
-PASSWORD="${PASSWORD:-changeme}"
-RHDH_API_URL="${RHDH_API_URL:-https://rhdh.example.com}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.local:8080}"
+REALM_NAME="${REALM_NAME:-workshop-realm}"
+CLIENT_ID="${CLIENT_ID:-rhdh-local-client}"
+CLIENT_SECRET="${CLIENT_SECRET:-3uB8g8KMOuVb9QjZhHOaznmCCOyDrnJc}"
+USERNAME="${USERNAME:-alice}"
+PASSWORD="${PASSWORD:-password123}"
+RHDH_API_URL="${RHDH_API_URL:-http://localhost:7007}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -39,12 +40,23 @@ echo "  RHDH API URL: $RHDH_API_URL"
 echo ""
 
 echo "=== Step 1: Acquiring token from Keycloak ==="
-TOKEN_RESPONSE=$(curl -s -X POST "${KEYCLOAK_URL}/realms/${REALM_NAME}/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=${CLIENT_ID}" \
-  -d "username=${USERNAME}" \
-  -d "password=${PASSWORD}")
+
+if [ -n "$CLIENT_SECRET" ]; then
+  TOKEN_RESPONSE=$(curl -s -X POST "${KEYCLOAK_URL}/realms/${REALM_NAME}/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "grant_type=password" \
+    -d "client_id=${CLIENT_ID}" \
+    -d "client_secret=${CLIENT_SECRET}" \
+    -d "username=${USERNAME}" \
+    -d "password=${PASSWORD}")
+else
+  TOKEN_RESPONSE=$(curl -s -X POST "${KEYCLOAK_URL}/realms/${REALM_NAME}/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "grant_type=password" \
+    -d "client_id=${CLIENT_ID}" \
+    -d "username=${USERNAME}" \
+    -d "password=${PASSWORD}")
+fi
 
 ACCESS_TOKEN=$(echo $TOKEN_RESPONSE | jq -r '.access_token')
 
@@ -60,13 +72,30 @@ echo "Token preview: ${ACCESS_TOKEN:0:50}..."
 echo ""
 
 echo "=== Step 2: Decoding token to verify principal type ==="
-TOKEN_PAYLOAD=$(echo $ACCESS_TOKEN | cut -d'.' -f2 | base64 -d 2>/dev/null)
+
+# Function to properly decode base64url (handles padding)
+decode_base64_url() {
+  local len=$((${#1} % 4))
+  local result="$1"
+  if [ $len -eq 2 ]; then result="$1"'=='; fi
+  if [ $len -eq 3 ]; then result="$1"'='; fi
+  echo "$result" | tr '_-' '/+' | base64 -d 2>/dev/null
+}
+
+TOKEN_PAYLOAD=$(echo $ACCESS_TOKEN | cut -d'.' -f2)
+DECODED_PAYLOAD=$(decode_base64_url "$TOKEN_PAYLOAD")
+
+if [ -z "$DECODED_PAYLOAD" ]; then
+  echo -e "${RED}Failed to decode token${NC}"
+  exit 1
+fi
+
 echo "Token claims:"
-echo $TOKEN_PAYLOAD | jq '{typ, preferred_username, azp, exp}'
+echo "$DECODED_PAYLOAD" | jq '{typ, preferred_username, azp, exp, iss}'
 echo ""
 
-PRINCIPAL_TYPE=$(echo $TOKEN_PAYLOAD | jq -r '.typ // "unknown"')
-USERNAME_IN_TOKEN=$(echo $TOKEN_PAYLOAD | jq -r '.preferred_username // "unknown"')
+PRINCIPAL_TYPE=$(echo "$DECODED_PAYLOAD" | jq -r '.typ // "unknown"')
+USERNAME_IN_TOKEN=$(echo "$DECODED_PAYLOAD" | jq -r '.preferred_username // "unknown"')
 
 if [ "$PRINCIPAL_TYPE" == "Bearer" ] && [ "$USERNAME_IN_TOKEN" != "unknown" ]; then
     echo -e "${GREEN}✓ Token is user-type (required for RBAC write operations)${NC}"
@@ -89,7 +118,7 @@ if [ "$HTTP_STATUS" == "200" ]; then
     echo "Number of existing policies: $POLICY_COUNT"
 else
     echo -e "${RED}✗ READ operation failed (HTTP $HTTP_STATUS)${NC}"
-    echo "$BODY" | jq '.' || echo "$BODY"
+    echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
 fi
 echo ""
 
@@ -118,19 +147,15 @@ if [ "$HTTP_STATUS" == "201" ] || [ "$HTTP_STATUS" == "200" ]; then
 else
     echo -e "${RED}✗ WRITE operation failed (HTTP $HTTP_STATUS)${NC}"
     echo "Response:"
-    echo "$BODY" | jq '.' || echo "$BODY"
+    echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
     
     if echo "$BODY" | grep -q "Only credential principal with type 'user' permitted"; then
         echo -e "\n${YELLOW}This confirms the token is not recognized as a user principal.${NC}"
-        echo "Possible issues:"
-        echo "  - Direct Access Grants not enabled on Keycloak client"
-        echo "  - Token format not recognized by RHDH backend"
-        echo "  - Service account being used instead of user account"
     fi
 fi
 echo ""
 
 echo "=================================================="
 echo "POC Test Complete"
-echo "=================================================="
-
+echo "==================================================
+"

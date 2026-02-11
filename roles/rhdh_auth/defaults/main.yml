@@ -1,0 +1,16 @@
+---
+# RHDH Authentication Role - Default Variables
+
+# Playwright version to install
+rhdh_auth_playwright_version: "1.58.0"
+
+# Authentication timeout in seconds
+rhdh_auth_timeout: 30
+
+# Verbose output (shows token details in logs - USE WITH CAUTION)
+rhdh_auth_verbose: false
+
+# Required variables (must be provided by playbook):
+# rhdh_url: URL of RHDH instance
+# rhdh_username: Username for authentication
+# rhdh_password: Password for authentication

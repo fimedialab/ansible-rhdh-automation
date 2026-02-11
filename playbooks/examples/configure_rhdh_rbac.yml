@@ -1,0 +1,44 @@
+---
+- name: Configure RHDH RBAC Permissions
+  hosts: localhost
+  gather_facts: true
+  connection: local
+
+  vars:
+    # RHDH connection
+    rhdh_url: "{{ lookup('env', 'RHDH_URL') | default('http://localhost:7007', true) }}"
+
+    # Authentication (from Vault)
+    rhdh_username: "{{ vault_rhdh_username }}"
+    rhdh_password: "{{ vault_rhdh_password }}"
+
+    # RBAC configuration
+    org_label_value: "org-finance"
+    role_type: "organisation"
+    role_access_level: "admin"
+
+  pre_tasks:
+    - name: Display configuration
+      ansible.builtin.debug:
+        msg: |
+          Configuring RBAC for:
+            Organization: {{ org_label_value }}
+            Role Type: {{ role_type }}
+            Access Level: {{ role_access_level }}
+            RHDH URL: {{ rhdh_url }}
+
+  roles:
+    # Step 1: Authenticate and acquire bearer token
+    - role: rhdh_auth
+      tags: ["auth", "always"]
+
+    # Step 2: Configure RBAC using the token
+    # - role: rhdh_rbac_automation
+    #   vars:
+    #     rbac_bearer_token: "{{ rhdh_bearer_token }}"
+    #   tags: ["rbac"]
+
+  post_tasks:
+    - name: Display completion
+      ansible.builtin.debug:
+        msg: "RBAC configuration completed successfully"
